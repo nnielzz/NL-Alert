@@ -3,13 +3,13 @@ import math
 import logging
 from datetime import timedelta
 
-import aiohttp
 import async_timeout
 from bs4 import BeautifulSoup
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 from homeassistant.const import CONF_ENTITY_ID
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN,
@@ -26,30 +26,31 @@ SCAN_INTERVAL = timedelta(minutes=10)
 def haversine(lat1, lon1, lat2, lon2):
     """Calculate distance (m) between two lat/lon points."""
     R = 6371000
-    φ1, φ2 = math.radians(lat1), math.radians(lat2)
-    Δφ = math.radians(lat2 - lat1)
-    Δλ = math.radians(lon2 - lon1)
-    a = math.sin(Δφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(Δλ / 2) ** 2
+    f1, f2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(f1) * math.cos(f2) * math.sin(dlon / 2) ** 2
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    location_source = entry.data["location_source"]
-    tracker_entity_id = entry.data.get(CONF_ENTITY_ID)
-    # config is in km
-    max_radius_m = entry.data.get("max_radius", 5) * 1000
-    town = entry.data.get("burgernet_location")
+    config = {**entry.data, **entry.options}
+    location_source = config.get("location_source", "home")
+    tracker_entity_id = config.get(CONF_ENTITY_ID)
+    max_radius_km = config.get("max_radius", 5)
+    max_radius_m = max_radius_km * 1000
+    town = config.get("burgernet_location", "")
+    session = async_get_clientsession(hass)
 
     # AmberAlert JSON coordinator (Burgernet landactiehost API)
     async def _fetch_amber():
         async with async_timeout.timeout(15):
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    BURGERNET_API,
-                    headers={"Accept": "application/json"},
-                )
-                resp.raise_for_status()
-                return await resp.json()
+            resp = await session.get(
+                BURGERNET_API,
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            return await resp.json()
 
     coordinator_amber = DataUpdateCoordinator(
         hass,
@@ -62,13 +63,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # NL-Alert JSON coordinator
     async def _fetch_nl():
         async with async_timeout.timeout(15):
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    NL_ALERT_API,
-                    headers={"Accept": "application/json"},
-                )
-                resp.raise_for_status()
-                return await resp.json()
+            resp = await session.get(
+                NL_ALERT_API,
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            return await resp.json()
 
     coordinator_nl = DataUpdateCoordinator(
         hass,
@@ -81,11 +81,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # Burgernet HTML scraper (latest single case)
     async def _fetch_burgernet():
         async with async_timeout.timeout(15):
-            async with aiohttp.ClientSession() as session:
-                url = BURGERNET_SEARCH_URL.format(town)
-                resp = await session.get(url)
-                resp.raise_for_status()
-                html = await resp.text()
+            url = BURGERNET_SEARCH_URL.format(town)
+            resp = await session.get(url)
+            resp.raise_for_status()
+            html = await resp.text()
 
         soup = BeautifulSoup(html, "html.parser")
         div = soup.select_one("div.c-action-message")
@@ -94,8 +93,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
         link_tag = div.select_one("a.action-message__link")
         heading = div.select_one("span.action-message__heading")
-        title = div.select_one("h3.action-message__title").get_text(strip=True)
-        items = heading.select("span.action-message__heading-item")
+        title_tag = div.select_one("h3.action-message__title")
+        if not heading or not title_tag:
+            return None
+
+        title = title_tag.get_text(strip=True)
+        items = heading.select("span.action-message__heading-item") if heading else []
 
         area = items[0].get_text(strip=True) if len(items) > 0 else None
         date = items[1].get_text(strip=True) if len(items) > 1 else None
@@ -155,15 +158,14 @@ class AmberAlertSensor(CoordinatorEntity, SensorEntity):
         self.hass = hass
         self.location_source = location_source
         self.tracker_entity_id = tracker_entity_id
-        # max_radius currently unused, but kept for compatibility / future use
+        # Radius currently unused for AmberAlert; retained for compatibility / potential future location filtering
         self.max_radius_m = max_radius_m
         self._attr_name = "AmberAlert"
         self._attr_unique_id = "amber_alert"
 
     @property
     def available(self):
-        # Always show this sensor as available
-        return True
+        return self.coordinator.last_update_success
 
     def _get_active_alerts(self):
         """Return list of active alerts (State=Actual, Type=Alert/Update) with parsed levels."""
@@ -228,7 +230,7 @@ class BurgernetSearchSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def available(self):
-        return True
+        return self.coordinator.last_update_success
 
     @property
     def state(self):
@@ -253,7 +255,7 @@ class NLAlertSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def available(self):
-        return True
+        return self.coordinator.last_update_success
 
     @property
     def state(self):
@@ -263,15 +265,18 @@ class NLAlertSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         item = self._get_active_item((self.coordinator.data or {}).get("data", []))
-        if not item:
-            return {}
+        message = item.get("message") if item else None
         return {
-            "nl_alert_id": item.get("id"),
-            "nl_alert_message": item.get("message"),
+            "nl_alert_id": item.get("id") if item else None,
+            "nl_alert_message": message,
+            "message": message,
         }
 
     def _get_coordinates(self):
-        state = self.hass.states.get(self.tracker_entity_id) if self.tracker_entity_id else None
+        state = None
+        if self.location_source == "entity" and self.tracker_entity_id:
+            state = self.hass.states.get(self.tracker_entity_id)
+
         if state and state.attributes.get("latitude") is not None:
             return state.attributes["latitude"], state.attributes["longitude"]
         return self.hass.config.latitude, self.hass.config.longitude
@@ -283,13 +288,77 @@ class NLAlertSensor(CoordinatorEntity, SensorEntity):
             if item.get("stop_at"):
                 continue
             for poly_str in item.get("area", []):
-                polygon = [
-                    tuple(map(float, pair.split(",")))
-                    for pair in poly_str.strip().split()
-                ]
-                if any(
-                    haversine(lat0, lon0, lat, lon) <= self.max_radius_m
-                    for lat, lon in polygon
-                ):
+                polygon = []
+                for pair in poly_str.strip().split():
+                    try:
+                        plat, plon = map(float, pair.split(","))
+                        polygon.append((plat, plon))
+                    except (TypeError, ValueError):
+                        continue
+
+                if not polygon:
+                    continue
+
+                if _point_in_polygon(lat0, lon0, polygon):
+                    return item
+
+                if _min_distance_to_polygon_m(lat0, lon0, polygon) <= self.max_radius_m:
                     return item
         return None
+
+
+def _point_in_polygon(lat, lon, polygon):
+    """Even-odd rule for point-in-polygon; polygon is list of (lat, lon)."""
+    inside = False
+    n = len(polygon)
+    if n < 3:
+        return False
+
+    for i in range(n):
+        lat1, lon1 = polygon[i]
+        lat2, lon2 = polygon[(i + 1) % n]
+
+        if ((lon1 > lon) != (lon2 > lon)):
+            t = (lon - lon1) / (lon2 - lon1)
+            intersect_lat = lat1 + t * (lat2 - lat1)
+            if intersect_lat > lat:
+                inside = not inside
+    return inside
+
+
+def _min_distance_to_polygon_m(lat, lon, polygon):
+    """Return min distance in meters from point to polygon edges."""
+    if len(polygon) == 1:
+        p_lat, p_lon = polygon[0]
+        return haversine(lat, lon, p_lat, p_lon)
+
+    min_dist = float("inf")
+    for i in range(len(polygon)):
+        a_lat, a_lon = polygon[i]
+        b_lat, b_lon = polygon[(i + 1) % len(polygon)]
+        dist = _distance_point_to_segment_m(lat, lon, a_lat, a_lon, b_lat, b_lon)
+        if dist < min_dist:
+            min_dist = dist
+    return min_dist
+
+
+def _distance_point_to_segment_m(lat, lon, a_lat, a_lon, b_lat, b_lon):
+    """Approx distance from point to segment using local equirectangular projection."""
+    R = 6371000
+    lat0 = math.radians(lat)
+
+    ax = math.radians(a_lon - lon) * math.cos(lat0) * R
+    ay = math.radians(a_lat - lat) * R
+    bx = math.radians(b_lon - lon) * math.cos(lat0) * R
+    by = math.radians(b_lat - lat) * R
+
+    vx = bx - ax
+    vy = by - ay
+    denom = vx * vx + vy * vy
+    if denom == 0:
+        return math.hypot(ax, ay)
+
+    t = max(0, min(1, - (ax * vx + ay * vy) / denom))
+    px = ax + t * vx
+    py = ay + t * vy
+    return math.hypot(px, py)
