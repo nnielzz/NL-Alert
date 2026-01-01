@@ -31,7 +31,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
         config=EntitySelectorConfig(domain="device_tracker")
     ),
     vol.Optional(
-        "max_radius (NL-ALERT)",
+        "max_radius",
         default=5
     ): NumberSelector(
         config=NumberSelectorConfig(
@@ -86,6 +86,7 @@ class NLAlertOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         current = self.config_entry.options or self.config_entry.data
+        current_max_radius = current.get("max_radius", current.get("max_radius (NL-ALERT)", 5))
         schema = vol.Schema({
             vol.Required(
                 "location_source",
@@ -107,7 +108,7 @@ class NLAlertOptionsFlowHandler(config_entries.OptionsFlow):
             ),
             vol.Optional(
                 "max_radius",
-                default=current.get("max_radius", 5)
+                default=current_max_radius
             ): NumberSelector(
                 config=NumberSelectorConfig(
                     min=0,

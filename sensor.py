@@ -10,6 +10,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -37,7 +38,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     config = {**entry.data, **entry.options}
     location_source = config.get("location_source", "home")
     tracker_entity_id = config.get(CONF_ENTITY_ID)
-    max_radius_km = config.get("max_radius", 5)
+    max_radius_km = config.get("max_radius", config.get("max_radius (NL-ALERT)", 5))
     max_radius_m = max_radius_km * 1000
     town = config.get("burgernet_location", "")
     session = async_get_clientsession(hass)
@@ -283,19 +284,11 @@ class NLAlertSensor(CoordinatorEntity, SensorEntity):
 
     def _get_active_item(self, items):
         lat0, lon0 = self._get_coordinates()
+        now = dt_util.utcnow()
         for item in items:
-            # skip ended alerts
-            if item.get("stop_at"):
+            if not _is_active(item, now):
                 continue
-            for poly_str in item.get("area", []):
-                polygon = []
-                for pair in poly_str.strip().split():
-                    try:
-                        plat, plon = map(float, pair.split(","))
-                        polygon.append((plat, plon))
-                    except (TypeError, ValueError):
-                        continue
-
+            for polygon in _iter_polygons(item.get("area")):
                 if not polygon:
                     continue
 
@@ -362,3 +355,46 @@ def _distance_point_to_segment_m(lat, lon, a_lat, a_lon, b_lat, b_lon):
     px = ax + t * vx
     py = ay + t * vy
     return math.hypot(px, py)
+
+
+def _iter_polygons(area):
+    """Yield polygons from the API 'area' field, tolerating strings or lists."""
+    if not area:
+        return []
+
+    polygons = []
+    # API currently returns a list of strings, but accept a single string too
+    entries = area if isinstance(area, (list, tuple)) else [area]
+    for entry in entries:
+        if isinstance(entry, str):
+            polygon = []
+            for pair in entry.strip().split():
+                try:
+                    plat, plon = map(float, pair.split(","))
+                    polygon.append((plat, plon))
+                except (TypeError, ValueError):
+                    continue
+            polygons.append(polygon)
+    return polygons
+
+
+def _is_active(item, now):
+    """Return True when alert is active based on start/stop timestamps."""
+    start = _parse_datetime(item.get("start_at"))
+    stop = _parse_datetime(item.get("stop_at"))
+
+    if start and now < start:
+        return False
+    if stop and now >= stop:
+        return False
+    return True
+
+
+def _parse_datetime(value):
+    """Parse ISO datetimes from API and ensure timezone awareness."""
+    if not value:
+        return None
+    dt = dt_util.parse_datetime(value)
+    if dt and dt.tzinfo is None:
+        dt = dt.replace(tzinfo=dt_util.UTC)
+    return dt
