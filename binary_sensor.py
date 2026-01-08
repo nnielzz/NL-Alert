@@ -35,7 +35,7 @@ class NLActiveAlertBinarySensor(BinarySensorEntity):
 
     def _state_listener(self, event):
         """Trigger an update when any sensor changes."""
-        self.async_write_ha_state()
+        self.hass.loop.call_soon_threadsafe(self.async_write_ha_state)
 
     @property
     def is_on(self) -> bool:
