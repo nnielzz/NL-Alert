@@ -4,7 +4,6 @@ import logging
 from datetime import timedelta
 
 import async_timeout
-from bs4 import BeautifulSoup
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
@@ -14,10 +13,12 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
-    BURGERNET_SEARCH_URL,
     BURGERNET_API,
+    BURGERNET_ACTIONS_API,
+    BURGERNET_IMAGE_API,
     NL_ALERT_API,
     STATIC_POSTER_URL,
+    CONF_BURGERNET_API_KEY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,13 +35,25 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
+def _resolve_coordinates(hass, location_source, tracker_entity_id):
+    """Return lat/lon from config or a device_tracker entity."""
+    state = None
+    if location_source == "entity" and tracker_entity_id:
+        state = hass.states.get(tracker_entity_id)
+
+    if state and state.attributes.get("latitude") is not None:
+        return state.attributes["latitude"], state.attributes["longitude"]
+    return hass.config.latitude, hass.config.longitude
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     config = {**entry.data, **entry.options}
     location_source = config.get("location_source", "home")
     tracker_entity_id = config.get(CONF_ENTITY_ID)
     max_radius_km = config.get("max_radius", config.get("max_radius (NL-ALERT)", 5))
     max_radius_m = max_radius_km * 1000
-    town = config.get("burgernet_location", "")
+    burgernet_api_key = config.get(CONF_BURGERNET_API_KEY, "")
+    burgernet_key_missing_logged = False
     session = async_get_clientsession(hass)
 
     # AmberAlert JSON coordinator (Burgernet landactiehost API)
@@ -79,40 +92,25 @@ async def async_setup_entry(hass, entry, async_add_entities):
         update_method=_fetch_nl,
     )
 
-    # Burgernet HTML scraper (latest single case)
+    # Burgernet actions (v2) with API key and radius filtering
     async def _fetch_burgernet():
+        nonlocal burgernet_key_missing_logged
+        if not burgernet_api_key:
+            if not burgernet_key_missing_logged:
+                _LOGGER.warning("Burgernet API key missing; no Burgernet actions fetched")
+                burgernet_key_missing_logged = True
+            return []
+
         async with async_timeout.timeout(15):
-            url = BURGERNET_SEARCH_URL.format(town)
-            resp = await session.get(url)
+            resp = await session.get(
+                BURGERNET_ACTIONS_API,
+                headers={
+                    "Accept": "application/json",
+                    "x-api-key": burgernet_api_key,
+                },
+            )
             resp.raise_for_status()
-            html = await resp.text()
-
-        soup = BeautifulSoup(html, "html.parser")
-        div = soup.select_one("div.c-action-message")
-        if not div:
-            return None
-
-        link_tag = div.select_one("a.action-message__link")
-        heading = div.select_one("span.action-message__heading")
-        title_tag = div.select_one("h3.action-message__title")
-        if not heading or not title_tag:
-            return None
-
-        title = title_tag.get_text(strip=True)
-        items = heading.select("span.action-message__heading-item") if heading else []
-
-        area = items[0].get_text(strip=True) if len(items) > 0 else None
-        date = items[1].get_text(strip=True) if len(items) > 1 else None
-        time = items[2].get_text(strip=True) if len(items) > 2 else None
-        link = link_tag["href"] if link_tag else None
-
-        return {
-            "area": area,
-            "date": date,
-            "time": time,
-            "title": title,
-            "link": link,
-        }
+            return await resp.json()
 
     coordinator_burgernet = DataUpdateCoordinator(
         hass,
@@ -138,7 +136,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 tracker_entity_id,
                 max_radius_m,
             ),
-            BurgernetSearchSensor(coordinator_burgernet),
+            BurgernetSearchSensor(
+                coordinator_burgernet,
+                hass,
+                location_source,
+                tracker_entity_id,
+                max_radius_m,
+            ),
             NLAlertSensor(
                 coordinator_nl,
                 hass,
@@ -222,10 +226,14 @@ class AmberAlertSensor(CoordinatorEntity, SensorEntity):
 
 
 class BurgernetSearchSensor(CoordinatorEntity, SensorEntity):
-    """Burgernet sensor: scrapes the latest case, unsafe if found."""
+    """Burgernet sensor: location-filtered using actions API (v2)."""
 
-    def __init__(self, coordinator):
+    def __init__(self, coordinator, hass, location_source, tracker_entity_id, max_radius_m):
         super().__init__(coordinator)
+        self.hass = hass
+        self.location_source = location_source
+        self.tracker_entity_id = tracker_entity_id
+        self.max_radius_m = max_radius_m
         self._attr_name = "Burgernet"
         self._attr_unique_id = "burgernet_search"
 
@@ -233,13 +241,41 @@ class BurgernetSearchSensor(CoordinatorEntity, SensorEntity):
     def available(self):
         return self.coordinator.last_update_success
 
+    def _get_actions(self):
+        lat0, lon0 = _resolve_coordinates(self.hass, self.location_source, self.tracker_entity_id)
+        return _prepare_burgernet_actions(self.coordinator.data, lat0, lon0, self.max_radius_m)
+
     @property
     def state(self):
-        return "unsafe" if self.coordinator.data else "safe"
+        actions = self._get_actions()
+        return "unsafe" if any(a.get("active") for a in actions) else "safe"
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data or {}
+        actions = self._get_actions()
+        active_actions = [a for a in actions if a.get("active")]
+        latest = active_actions[0] if active_actions else (actions[0] if actions else None)
+
+        attrs = {
+            "active_actions_count": len(active_actions),
+            "actions": actions,
+        }
+
+        if latest:
+            attrs.update({
+                "latest_action_id": latest.get("id"),
+                "latest_action_active": latest.get("active"),
+                "latest_message": latest.get("latest_message"),
+                "latest_message_type": latest.get("latest_message_type"),
+                "latest_message_time": latest.get("latest_message_time"),
+                "latest_conversation": latest.get("conversation"),
+            })
+
+            area = latest.get("area") or {}
+            if area.get("distance_m") is not None:
+                attrs["nearest_action_distance_m"] = area["distance_m"]
+
+        return attrs
 
 
 class NLAlertSensor(CoordinatorEntity, SensorEntity):
@@ -273,17 +309,8 @@ class NLAlertSensor(CoordinatorEntity, SensorEntity):
             "message": message,
         }
 
-    def _get_coordinates(self):
-        state = None
-        if self.location_source == "entity" and self.tracker_entity_id:
-            state = self.hass.states.get(self.tracker_entity_id)
-
-        if state and state.attributes.get("latitude") is not None:
-            return state.attributes["latitude"], state.attributes["longitude"]
-        return self.hass.config.latitude, self.hass.config.longitude
-
     def _get_active_item(self, items):
-        lat0, lon0 = self._get_coordinates()
+        lat0, lon0 = _resolve_coordinates(self.hass, self.location_source, self.tracker_entity_id)
         now = dt_util.utcnow()
         for item in items:
             if not _is_active(item, now):
@@ -398,3 +425,136 @@ def _parse_datetime(value):
     if dt and dt.tzinfo is None:
         dt = dt.replace(tzinfo=dt_util.UTC)
     return dt
+
+
+def _coerce_epoch_seconds(value):
+    """Normalize seconds/milliseconds epoch to seconds (float)."""
+    try:
+        ts = float(value)
+    except (TypeError, ValueError):
+        return None
+    if ts > 1e12:
+        ts /= 1000.0
+    return ts
+
+
+def _format_epoch(value):
+    """Convert epoch seconds/milliseconds to local ISO string."""
+    ts = _coerce_epoch_seconds(value)
+    if ts is None:
+        return None
+    dt = dt_util.utc_from_timestamp(ts)
+    return dt_util.as_local(dt).isoformat()
+
+
+def _prepare_burgernet_message(msg, action_id):
+    image_id = msg.get("imageId")
+    image_url = BURGERNET_IMAGE_API.format(id=action_id, imageId=image_id) if action_id and image_id else None
+    return {
+        "title": msg.get("title"),
+        "body": msg.get("body"),
+        "response_url": msg.get("responseUrl"),
+        "message_type": msg.get("messageType"),
+        "last_modified": _format_epoch(msg.get("lastModifiedTimestamp")),
+        "speech_id": msg.get("speechId"),
+        "image_id": image_id,
+        "image_url": image_url,
+    }
+
+
+def _extract_burgernet_actions(payload):
+    if isinstance(payload, dict):
+        data = payload.get("actions")
+        if isinstance(data, list):
+            return data
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+def _prepare_burgernet_action(action, lat0, lon0, max_radius_m):
+    area = action.get("area") or {}
+    center_lat = area.get("lat")
+    center_lng = area.get("lng")
+    if center_lat is None or center_lng is None:
+        return None
+
+    distance_m = haversine(lat0, lon0, center_lat, center_lng)
+    if max_radius_m is not None and distance_m > max_radius_m:
+        return None
+
+    radius_m = area.get("radius")
+    messages = action.get("messages") or []
+    sorted_messages = sorted(messages, key=lambda m: m.get("lastModifiedTimestamp") or 0)
+    latest = sorted_messages[-1] if sorted_messages else None
+    action_id = action.get("id")
+    image_id = latest.get("imageId") if latest else action.get("imageId")
+    image_url = BURGERNET_IMAGE_API.format(id=action_id, imageId=image_id) if action_id and image_id else None
+
+    status = "active" if action.get("active") else "closed"
+    conversation_lines = [f"Status: {status}"]
+    if action.get("municipality"):
+        conversation_lines.append(f"Municipality: {action.get('municipality')}")
+    if center_lat is not None and center_lng is not None:
+        conversation_lines.append(f"Area: lat {center_lat}, lng {center_lng}, radius {radius_m} m")
+    for msg in sorted_messages:
+        ts_label = _format_epoch(msg.get("lastModifiedTimestamp"))
+        prefix_bits = [b for b in [ts_label, msg.get("messageType")] if b]
+        prefix = " | ".join(prefix_bits)
+        body = msg.get("body") or msg.get("title") or ""
+        line = f"{prefix}: {body}" if prefix else body
+        if line:
+            conversation_lines.append(line)
+    if not action.get("active"):
+        conversation_lines.append("Case closed.")
+    conversation = "\n".join([line for line in conversation_lines if line])
+
+    prepared_messages = [_prepare_burgernet_message(msg, action_id) for msg in sorted_messages]
+
+    start_ts = _coerce_epoch_seconds(action.get("startTimestamp"))
+    end_ts = _coerce_epoch_seconds(action.get("endTimestamp"))
+
+    latest_message_text = None
+    latest_message_type = None
+    latest_message_time = None
+    if latest:
+        latest_message_text = latest.get("body") or latest.get("title")
+        latest_message_type = latest.get("messageType")
+        latest_message_time = _format_epoch(latest.get("lastModifiedTimestamp"))
+        if status == "closed" and latest_message_text:
+            latest_message_text = f"{latest_message_text} (case closed)"
+
+    return {
+        "id": action_id,
+        "municipality": action.get("municipality"),
+        "action_type": action.get("actionType"),
+        "amber_alert": bool(action.get("amberAlert")),
+        "active": bool(action.get("active")),
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "start": _format_epoch(action.get("startTimestamp")),
+        "end": _format_epoch(action.get("endTimestamp")),
+        "latest_message": latest_message_text,
+        "latest_message_type": latest_message_type,
+        "latest_message_time": latest_message_time,
+        "messages": prepared_messages,
+        "conversation": conversation,
+        "image_id": image_id,
+        "image_url": image_url,
+        "area": {
+            "lat": center_lat,
+            "lng": center_lng,
+            "radius": radius_m,
+            "distance_m": distance_m,
+        },
+    }
+
+
+def _prepare_burgernet_actions(payload, lat0, lon0, max_radius_m):
+    actions = []
+    for action in _extract_burgernet_actions(payload):
+        prepared = _prepare_burgernet_action(action, lat0, lon0, max_radius_m)
+        if prepared:
+            actions.append(prepared)
+    actions.sort(key=lambda a: a.get("start_ts") or 0, reverse=True)
+    return actions

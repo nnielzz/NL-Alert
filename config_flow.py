@@ -10,7 +10,7 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
 )
-from .const import DOMAIN
+from .const import DOMAIN, CONF_BURGERNET_API_KEY
 
 STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(
@@ -45,6 +45,10 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(
         "burgernet_location",
         default="Postcode of Plaats",
+    ): str,
+    vol.Optional(
+        CONF_BURGERNET_API_KEY,
+        default=""
     ): str,
 })
 
@@ -121,6 +125,10 @@ class NLAlertOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Required(
                 "burgernet_location",
                 default=current.get("burgernet_location", "")
+            ): str,
+            vol.Optional(
+                CONF_BURGERNET_API_KEY,
+                default=current.get(CONF_BURGERNET_API_KEY, "")
             ): str,
         })
 
