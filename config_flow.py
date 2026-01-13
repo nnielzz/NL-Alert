@@ -10,7 +10,7 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
 )
-from .const import DOMAIN
+from .const import DOMAIN, CONF_MAX_BURGERNET_ACTIONS
 
 STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(
@@ -42,10 +42,17 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
             unit_of_measurement="km",
         )
     ),
-    vol.Required(
-        "burgernet_location",
-        default="Postcode of Plaats",
-    ): str,
+    vol.Optional(
+        CONF_MAX_BURGERNET_ACTIONS,
+        default=1,
+    ): NumberSelector(
+        config=NumberSelectorConfig(
+            min=1,
+            max=3,
+            step=1,
+            mode="box",
+        )
+    ),
 })
 
 
@@ -118,10 +125,17 @@ class NLAlertOptionsFlowHandler(config_entries.OptionsFlow):
                     unit_of_measurement="km",
                 )
             ),
-            vol.Required(
-                "burgernet_location",
-                default=current.get("burgernet_location", "")
-            ): str,
+            vol.Optional(
+                CONF_MAX_BURGERNET_ACTIONS,
+                default=current.get(CONF_MAX_BURGERNET_ACTIONS, 1),
+            ): NumberSelector(
+                config=NumberSelectorConfig(
+                    min=1,
+                    max=3,
+                    step=1,
+                    mode="box",
+                )
+            ),
         })
 
         if user_input is None:
