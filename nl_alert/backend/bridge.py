@@ -12,7 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 def discovery(engine):
     prefix = f'nl_alert/{engine.instance_id}'
     device = {'identifiers': [f'nl_alert_app_{engine.instance_id}'], 'name': 'NL Alert',
-        'manufacturer': 'nnielzz', 'model': 'NL Alert App', 'sw_version': '4.0.0'}
+        'manufacturer': 'nnielzz', 'model': 'NL Alert App', 'sw_version': '4.0.1'}
     result = {}
     for zone in [None, *(engine.zones or [])]:
         area = zone['id'] if zone else 'all'

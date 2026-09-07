@@ -25,3 +25,19 @@ header{background:linear-gradient(105deg,#19252bee,#142027f7);border-color:#ffff
 .alert-cluster:hover,.alert-cluster.has-selection{border-color:#e0f8bb;box-shadow:inset 0 1px 0 #f2fff56a,0 0 0 5px #bedeb125,0 0 24px #b6dba438}
 .alert-cluster:focus-visible{outline:2px solid #e3f6c9;outline-offset:5px}
 @media(prefers-reduced-transparency:reduce){.alert-cluster{background:#34554f;backdrop-filter:none}}
+/* Selection sonar stays inside marker contents so Leaflet retains positioning. */
+.sonar-ring{display:none;position:absolute;inset:0;border:1px solid var(--pin,#99dbc9);border-radius:50%;pointer-events:none;opacity:0}
+.alert-pin.selected .sonar-ring,.tracking-selected .sonar-ring{display:block;animation:selection-sonar 3.2s ease-out infinite}
+.alert-pin.selected .sonar-ring.delayed,.tracking-selected .sonar-ring.delayed{animation-delay:1.6s}
+.alert-pin.selected .sonar-ring{inset:2px 1px 4px}
+.location-dot>i{position:relative;z-index:1}
+.tracking-selected{--pin:#99dbc9}
+@keyframes selection-sonar{0%{transform:scale(1);opacity:0}15%{opacity:.55}85%,100%{transform:scale(3.5);opacity:0}}
+.detail-status{display:flex;align-items:center;gap:8px}
+.detail-status>i{width:6px;height:6px;flex:none;border-radius:50%;background:var(--detail-accent);opacity:.65}
+.detail-live .detail-status>i{animation:status-breathe 2.8s ease-in-out infinite}
+.detail-live:after{content:'';position:absolute;top:0;left:12%;width:76%;height:1px;background:linear-gradient(90deg,transparent,var(--detail-accent),transparent);box-shadow:0 0 18px 2px var(--detail-accent);pointer-events:none;animation:glass-scan 6s ease-in-out infinite}
+.map-tools button[aria-pressed="true"]{color:#b5ecd9;background:rgba(135,204,182,.14)}
+@keyframes status-breathe{0%,100%{opacity:.5;box-shadow:0 0 0 0 transparent}50%{opacity:1;box-shadow:0 0 12px 3px color-mix(in srgb,var(--detail-accent) 30%,transparent)}}
+@keyframes glass-scan{0%,100%{transform:translateX(-16%);opacity:.25}50%{transform:translateX(16%);opacity:.8}}
+@media(prefers-reduced-motion:reduce){.sonar-ring{display:none!important}.detail-live:after{animation:none;opacity:.4}.detail-status>i{animation:none}}
