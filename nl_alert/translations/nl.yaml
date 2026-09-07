@@ -1,0 +1,10 @@
+configuration:
+  location_entity:
+    name: Locatie-entiteit
+    description: Optioneel een person- of device_tracker-entiteits-ID. Laat leeg voor de Home Assistant-thuislocatie.
+  poll_seconds:
+    name: Verversinterval meldingen
+    description: Aantal seconden tussen verzoeken aan de drie bronnen. Locatie wordt elke 15 seconden bijgewerkt.
+  default_radius_km:
+    name: Beginradius (km)
+    description: Radius voor het eerste gebied. Bestaande gebieden pas je aan in het dashboard.

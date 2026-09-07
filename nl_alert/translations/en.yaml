@@ -1,0 +1,10 @@
+configuration:
+  location_entity:
+    name: Location entity
+    description: Optional person or device_tracker entity ID. Leave empty to use the Home Assistant home location.
+  poll_seconds:
+    name: Alert refresh interval
+    description: Seconds between requests to the three alert feeds. Location is refreshed every 15 seconds.
+  default_radius_km:
+    name: Initial radius (km)
+    description: Radius for the first area. Change saved areas directly in the dashboard.

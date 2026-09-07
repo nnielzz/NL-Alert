@@ -1,0 +1,29 @@
+name: NL Alert
+version: "4.0.0"
+slug: nl_alert
+description: Dutch alert map with Burgernet, AMBER and NL-Alert, radius areas and MQTT sensors.
+url: https://github.com/nnielzz/NL-Alert
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: true
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:radar
+panel_title: NL Alert
+panel_admin: true
+homeassistant_api: true
+hassio_api: true
+hassio_role: default
+services:
+  - mqtt:want
+options:
+  location_entity: ""
+  poll_seconds: 120
+  default_radius_km: 5
+schema:
+  location_entity: str
+  poll_seconds: int(60,900)
+  default_radius_km: float(0.1,250)
