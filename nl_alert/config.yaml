@@ -1,5 +1,5 @@
 name: NL Alert
-version: "4.0.3"
+version: "4.0.4"
 slug: nl_alert
 description: Dutch alert map with Burgernet, AMBER and NL-Alert, radius areas and MQTT sensors.
 url: https://github.com/nnielzz/NL-Alert

@@ -8,6 +8,7 @@ import clusterCss from 'leaflet.markercluster/dist/MarkerCluster.css?inline';
 import css from './style.css?inline';
 import { demo } from './demo';
 import { subscribe, saveAreas } from './client';
+import { revealMarker } from './map-selection.js';
 
 const sources = {nl_alert: {name: 'NL-Alert', color: '#ea7553'}, burgernet: {name: 'Burgernet', color: '#548678'}, amber: {name: 'AMBER Alert', color: '#c59b43'}};
 const fmt = t => t ? new Date(t).toLocaleString('nl-NL', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}) : 'Tijd onbekend';
@@ -19,6 +20,7 @@ function Tag({source}) {return <span className="tag" style={{'--source':sources[
 
 function MapView({alerts, zones, location, trackingLocation, selected, onSelect, locationSelected, onLocationSelect, mapRef, draft, onPoint}) {
   const element = useRef(); const layer = useRef(); const clusters = useRef(); const markers = useRef(new globalThis.Map());
+  const revealed = useRef(null);
   const clickRef = useRef(onPoint); clickRef.current = onPoint;
   const selectRef = useRef(onSelect); selectRef.current = onSelect;
   useEffect(() => {
@@ -34,7 +36,8 @@ function MapView({alerts, zones, location, trackingLocation, selected, onSelect,
       spiderfyOnMaxZoom: true,
       spiderfyDistanceMultiplier: 1.5,
       spiderLegPolylineOptions: {weight:1.5,color:'#b9d5cd',opacity:.65},
-      animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      // Cluster mutations must be synchronous during live data updates.
+      animate: false,
       iconCreateFunction: cluster => {
         const count=cluster.getChildCount();
         const size=count>=100?54:count>=10?48:42;
@@ -53,9 +56,18 @@ function MapView({alerts, zones, location, trackingLocation, selected, onSelect,
   // Keep the cluster group stable while editing zones or opening details.
   useEffect(()=>{
     const group=clusters.current;if(!group)return;
-    group.clearLayers();markers.current.clear();
+    const visibleIds=new Set(alerts.filter(point).map(a=>a.id));
+    for(const [id,marker] of markers.current){
+      if(!visibleIds.has(id)){group.removeLayer(marker);markers.current.delete(id);}
+    }
     for(const a of alerts){
       if(!point(a))continue;
+      const existing=markers.current.get(a.id);
+      if(existing){
+        const p=existing.getLatLng();
+        if(p.lat!==a.lat||p.lng!==a.lon)existing.setLatLng([a.lat,a.lon]);
+        continue;
+      }
       const marker=L.marker([a.lat,a.lon],{icon:alertIcon(a,false),keyboard:true,title:`${sources[a.source].name}: ${a.title}`});
       marker.on('click',()=>selectRef.current(a.id));
       markers.current.set(a.id,marker);
@@ -71,7 +83,11 @@ function MapView({alerts, zones, location, trackingLocation, selected, onSelect,
     clusters.current?.refreshClusters();
     const marker=markers.current.get(selected);
     // Also reveal list selections that are inside a cluster or share coordinates.
-    if(marker)clusters.current?.zoomToShowLayer(marker);
+    if(!selected)revealed.current=null;
+    if(marker&&revealed.current!==selected){
+      revealMarker(mapRef.current,clusters.current,marker);
+      revealed.current=selected;
+    }
   },[alerts,selected]);
   useEffect(()=>{
     const group=layer.current; if(!group)return; group.clearLayers();

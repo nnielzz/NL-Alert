@@ -6,6 +6,7 @@ export function subscribe(onData, onConnected, onError) {
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(url);
     socket.onmessage = event => {
+      if(stopped)return;
       try {onData(JSON.parse(event.data));onConnected(true);}
       catch {onError('Ongeldig antwoord van de app.');}
     };
@@ -13,7 +14,10 @@ export function subscribe(onData, onConnected, onError) {
     socket.onerror = () => onError('Verbinding met de app onderbroken. Er wordt opnieuw verbonden.');
   };
   connect();
-  return () => {stopped=true;clearTimeout(timer);socket?.close();};
+  return () => {
+    stopped=true;clearTimeout(timer);
+    if(socket){socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close();}
+  };
 }
 
 export async function saveAreas(zones) {

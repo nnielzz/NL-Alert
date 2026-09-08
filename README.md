@@ -1,15 +1,17 @@
 # NL Alert — Home Assistant App
 
-Installable through **Home Assistant Settings → Apps → App Store**. This repository contains a standalone app with a React dashboard, OpenStreetMap clusters, Burgernet/AMBER/NL-Alert feeds, saved radius areas and automation sensors.
-Vibecoded with love by computer overlords.
+Installable through **Home Assistant Settings → Apps → App Store**. This repository contains a standalone app with a dark React dashboard, OpenStreetMap clusters, Burgernet/AMBER/NL-Alert feeds, saved radius areas and automation sensors.
 
 ## Install
 
-1. Add `https://github.com/nnielzz/NL-Alert` under **App Store → ⋮ → Repositories**, refresh the store and install **NL Alert**.
-2. For sensors, install/start **Mosquitto broker** and configure Home Assistant's **MQTT integration**. The app discovers its broker credentials automatically.
-3. Start NL Alert and open **Open Web UI** or enable **Show in sidebar**.
+1. Upload the repository structure below to GitHub, including the built `nl_alert/www/nl-alert-panel.js`.
+2. Add `https://github.com/nnielzz/NL-Alert` under **App Store → ⋮ → Repositories**, refresh the store and install **NL Alert**.
+3. For sensors, install/start **Mosquitto broker** and configure Home Assistant's **MQTT integration**. The app discovers its broker credentials automatically.
+4. Start NL Alert and open **Open Web UI** or enable **Show in sidebar**.
 
 The dashboard works without MQTT; MQTT provides automatically discovered safety/count sensors for every radius, including the full list of simultaneous alerts. Home Assistant automation events are also available through the Core API.
+
+**No HACS custom integration is required.** Disable the old integration before using this app. See [installation, migration and automation instructions](nl_alert/DOCS.md).
 
 ## Repository structure
 

@@ -1,3 +1,11 @@
+# 4.0.4
+
+- Preserve map markers across live data refreshes.
+- Replace asynchronous cluster selection zoom with synchronous, guarded marker reveal to prevent stale-parent crashes.
+- Avoid recentering a selected alert on every background update.
+- Keep cluster changes synchronous; retain sonar and panel animations.
+- Detach WebSocket callbacks when the dashboard is unmounted.
+
 # 4.0.3
 
 - MQTT message sensor per radius area and for all areas combined.
