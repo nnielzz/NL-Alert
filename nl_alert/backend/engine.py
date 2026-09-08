@@ -118,4 +118,4 @@ class Engine:
         return {'instance_id': self.instance_id, 'entry_id': self.instance_id,
             'alerts': sorted(self.alerts.values(), key=lambda a: a.get('updated_at') or '', reverse=True),
             'zones': self.zones or [], 'location': self.location, 'sources': self.sources,
-            'updated_at': self.updated_at, 'bridge': self.bridge, 'pending_events': len(self.outbox)}
+            'poll_seconds': getattr(self, 'poll_seconds', 180), 'updated_at': self.updated_at, 'bridge': self.bridge, 'pending_events': len(self.outbox)}

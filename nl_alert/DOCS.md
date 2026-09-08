@@ -4,7 +4,7 @@
 
 1. In **Settings → Apps → App Store → ⋮ → Repositories**, add `https://github.com/nnielzz/NL-Alert`.
 2. Refresh the store, select **NL Alert**, then **Install**. The app builds locally for amd64 or aarch64; the first installation can take a few minutes.
-3. For sensors, install and start the official **Mosquitto broker** app. Under **Settings → Devices & services**, configure its discovered **MQTT** integration. If a broker was already configured outside Supervisor, this app currently needs a Supervisor-provided MQTT service; manual broker credentials are not supported.
+3. For sensors, install and start the official **Mosquitto broker** app. Under **Settings → Devices & services**, configure its discovered **MQTT** integration. Automatic setup uses Supervisor. If this fails or your broker runs elsewhere, configure the MQTT connection manually as described below.
 4. Start **NL Alert**, enable **Start on boot** and **Show in sidebar**, and open **Open Web UI**.
 5. The first alert area uses Home Assistant's home location. Edit it or create additional areas in the dashboard.
 
@@ -18,12 +18,12 @@ Disable/remove the old NL-Alert integration in **Devices & services** to avoid d
 
 ```yaml
 location_entity: ""
-poll_seconds: 120
+poll_seconds: 180
 default_radius_km: 5
 ```
 
 - `location_entity`: leave empty for Home Assistant's home location, or enter e.g. `person.niels` / `device_tracker.phone`. Location refreshes every 15 seconds. If the configured tracker cannot provide a valid location, following areas become unavailable until it recovers; fixed areas still work.
-- `poll_seconds`: 60–900 seconds between alert-feed refreshes; default 120.
+- `poll_seconds`: 60–900 seconds between alert-feed refreshes; default 180.
 - `default_radius_km`: only seeds the first area. Edit existing areas in the dashboard.
 
 Restart the app after changing its configuration. Area edits in the dashboard apply immediately. Areas, alert history, discovery identifiers and pending events are stored in `/data/state.json` and survive app restarts/updates/backups. Deleting the app's data resets its identity and settings.
@@ -89,3 +89,22 @@ Clusters reflect active source/search/status filters and expand when clicked. Co
 - Map tiles require internet access to OpenStreetMap. Feed requests originate from the app container.
 
 This is an additional alert overview, not a replacement for official NL-Alert reception on your phone.
+
+## MQTT connection troubleshooting (4.0.2)
+
+The dashboard and app logs now distinguish retrieving the MQTT service from connecting and publishing. A Supervisor HTTP error happens before connecting to Mosquitto; it does not mean your broker is stopped. Restart Mosquitto to register its service again, then restart NL Alert.
+
+If automatic service lookup still fails, enter these options in the NL Alert app configuration (keep your existing location and radius settings):
+
+```yaml
+poll_seconds: 180
+mqtt_host: core-mosquitto
+mqtt_port: 1883
+mqtt_username: YOUR_MQTT_USER
+mqtt_password: YOUR_MQTT_PASSWORD
+mqtt_tls: false
+```
+
+Use an existing MQTT account accepted by your broker. `core-mosquitto` is the internal hostname of the official Mosquitto app. For another broker, use its reachable hostname and appropriate port/TLS settings. TLS validates the certificate; use a hostname matching it. Credentials stay in the app backend and are never included in dashboard state. Leave `mqtt_host` empty to use Supervisor automatically.
+
+On an existing installation, explicitly set `poll_seconds: 180`: Home Assistant preserves previously saved options when updating. MQTT availability is still refreshed at least every 30 seconds so sensors do not expire between feed refreshes.

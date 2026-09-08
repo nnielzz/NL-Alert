@@ -1,3 +1,10 @@
+# 4.0.2
+
+- Optional direct MQTT configuration when Supervisor service discovery fails.
+- Report the failed MQTT stage and Supervisor HTTP status without exposing credentials.
+- Default feed refresh interval is three minutes; dashboard shows the configured interval.
+- MQTT availability heartbeat remains independent of feed polling.
+
 # 4.0.1
 
 - Send an origin-only Referer for OpenStreetMap tiles, including through ingress.

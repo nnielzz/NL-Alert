@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestClient, TestServer
@@ -158,6 +159,37 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         removed = [m[0] for m in messages if m[1] == '']
         self.assertEqual(len(removed), 2)
         self.assertTrue(set(removed).issubset(old))
+
+    async def test_mqtt_manual_connection_bypasses_failed_supervisor_and_hides_secrets(self):
+        self.service.supervisor.mqtt = AsyncMock(side_effect=ConnectionError())
+        self.service.bridge.options = {'mqtt_host': 'core-mosquitto', 'mqtt_port': 1883,
+            'mqtt_username': 'test-user', 'mqtt_password': 'test-secret', 'mqtt_tls': False}
+        settings = await self.service.bridge.connection_settings()
+        self.assertEqual(settings['host'], 'core-mosquitto')
+        self.assertEqual(settings['password'], 'test-secret')
+        self.assertFalse(settings['ssl'])
+        self.service.supervisor.mqtt.assert_not_awaited()
+        response = await self.client.get('/api/state')
+        body = await response.text()
+        self.assertNotIn('test-secret', body)
+        self.assertNotIn('test-user', body)
+
+    async def test_mqtt_empty_host_uses_supervisor(self):
+        self.service.supervisor.mqtt = AsyncMock(return_value={'host':'automatic', 'port':1883})
+        self.service.bridge.options = {'mqtt_host':'   '}
+        self.assertEqual((await self.service.bridge.connection_settings())['host'], 'automatic')
+
+    async def test_mqtt_http_failure_reports_status_without_response_details(self):
+        from aiohttp import ClientResponseError
+        err = ClientResponseError(None, (), status=403, message='secret-response')
+        message = self.service.bridge.failure_message(err, 'service')
+        self.assertIn('HTTP 403', message)
+        self.assertNotIn('secret-response', message)
+
+    async def test_refresh_interval_reported_to_dashboard(self):
+        self.assertEqual(self.service.poll_seconds, 180)
+        response = await self.client.get('/api/state')
+        self.assertEqual((await response.json())['poll_seconds'], 180)
 
     async def test_supervisor_location_service_and_events(self):
         requests = []

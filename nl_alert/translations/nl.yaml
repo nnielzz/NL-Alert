@@ -8,3 +8,18 @@ configuration:
   default_radius_km:
     name: Beginradius (km)
     description: Radius voor het eerste gebied. Bestaande gebieden pas je aan in het dashboard.
+  mqtt_host:
+    name: MQTT host
+    description: Laat leeg voor Supervisor. Gebruik core-mosquitto voor een directe verbinding met de Mosquitto-app.
+  mqtt_port:
+    name: MQTT poort
+    description: Brokerpoort voor de directe verbinding (meestal 1883, of 8883 met TLS).
+  mqtt_username:
+    name: MQTT gebruikersnaam
+    description: Alleen nodig bij een direct ingesteld brokeradres.
+  mqtt_password:
+    name: MQTT wachtwoord
+    description: Wachtwoord voor de directe brokerverbinding. Wordt niet naar het dashboard gestuurd.
+  mqtt_tls:
+    name: MQTT TLS
+    description: Versleutelde verbinding met certificaatcontrole voor het direct ingestelde brokeradres.

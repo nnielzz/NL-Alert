@@ -1,5 +1,5 @@
 name: NL Alert
-version: "4.0.1"
+version: "4.0.2"
 slug: nl_alert
 description: Dutch alert map with Burgernet, AMBER and NL-Alert, radius areas and MQTT sensors.
 url: https://github.com/nnielzz/NL-Alert
@@ -21,9 +21,19 @@ services:
   - mqtt:want
 options:
   location_entity: ""
-  poll_seconds: 120
+  poll_seconds: 180
   default_radius_km: 5
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_tls: false
 schema:
   location_entity: str
   poll_seconds: int(60,900)
   default_radius_km: float(0.1,250)
+  mqtt_host: str?
+  mqtt_port: port?
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_tls: bool?

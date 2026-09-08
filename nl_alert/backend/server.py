@@ -19,12 +19,13 @@ SERVICE = web.AppKey('service', object)
 
 
 class Service:
-    def __init__(self, engine, supervisor, session, poll_seconds=120, entity_id=''):
+    def __init__(self, engine, supervisor, session, poll_seconds=180, entity_id='', mqtt_options=None):
         self.engine, self.supervisor, self.session = engine, supervisor, session
         self.poll_seconds, self.entity_id = poll_seconds, entity_id
+        self.engine.poll_seconds = poll_seconds
         self.lock = asyncio.Lock()
         self.clients = set()
-        self.bridge = Bridge(engine, supervisor, self.lock, self.persist, self.broadcast)
+        self.bridge = Bridge(engine, supervisor, self.lock, self.persist, self.broadcast, mqtt_options)
 
     async def persist(self):
         # Call under the lock; serialization and atomic disk writes run off-loop.
@@ -166,7 +167,7 @@ async def run(args):
     async with ClientSession(timeout=ClientTimeout(total=20)) as session:
         engine = Engine(path / 'state.json', options.get('default_radius_km', 5))
         supervisor = Supervisor(session, token)
-        service = Service(engine, supervisor, session, options.get('poll_seconds', 120), options.get('location_entity', ''))
+        service = Service(engine, supervisor, session, options.get('poll_seconds', 180), options.get('location_entity', ''), options)
         app = create_app(service, Path(__file__).resolve().parents[1] / 'www', args.local)
         runner = web.AppRunner(app, access_log=None)
         await runner.setup()

@@ -8,3 +8,18 @@ configuration:
   default_radius_km:
     name: Initial radius (km)
     description: Radius for the first area. Change saved areas directly in the dashboard.
+  mqtt_host:
+    name: MQTT host
+    description: Leave empty for Supervisor. Use core-mosquitto for a direct connection to the Mosquitto app.
+  mqtt_port:
+    name: MQTT port
+    description: Direct broker port (usually 1883, or 8883 with TLS).
+  mqtt_username:
+    name: MQTT username
+    description: Used only with a manually configured broker host.
+  mqtt_password:
+    name: MQTT password
+    description: Password for the direct broker connection. Never sent to the dashboard.
+  mqtt_tls:
+    name: MQTT TLS
+    description: Encrypt the direct broker connection and verify its certificate.
