@@ -79,7 +79,7 @@ class EngineTests(unittest.TestCase):
 
     def test_discovery_has_stable_ids_and_dual_availability(self):
         configs = discovery(self.engine)
-        self.assertEqual(len(configs), 4)
+        self.assertEqual(len(configs), 6)
         for topic, config in configs.items():
             self.assertIn('unique_id', config)
             self.assertEqual(len(config['availability']), 2)
@@ -91,6 +91,35 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(self.engine.outbox), 1)
         self.engine.replace_zones([])
         self.assertEqual(self.engine.outbox, [])
+
+    def test_message_sensor_preserves_full_text_and_multiple_alerts(self):
+        self.engine.ingest({'burgernet': {'actions': [action(1), action(2)]}}, NOW)
+        self.engine.alerts['burgernet:1'].update(title='Older', message='First message', updated_at='2026-09-07T10:00:00Z')
+        self.engine.alerts['burgernet:2'].update(title='T' * 300, message='M' * 500, updated_at='2026-09-07T11:00:00Z')
+        state = self.engine.area_state()
+        self.assertEqual(state['title'], 'T' * 300)
+        self.assertEqual(state['message'], 'M' * 500)
+        self.assertIn('First message', state['notification_text'])
+        self.assertIn('M' * 500, state['notification_text'])
+        self.assertEqual(len(state['alerts']), 2)
+        config = next(c for t, c in discovery(self.engine).items() if t.endswith('_all_message/config'))
+        self.assertEqual(config['value_template'], '{{ value_json.title[:255] }}')
+        self.assertNotIn('unit_of_measurement', config)
+        self.engine.replace_zones([])
+        self.assertEqual(self.engine.area_state()['notification_text'], '')
+        self.assertEqual(self.engine.area_state()['title'], 'Geen actieve meldingen')
+
+    def test_notifications_limit_three_newest_in_radius_without_limiting_count(self):
+        self.engine.ingest({'burgernet': {'actions': [action(i) for i in range(1, 6)] + [action(6, lat=54)]}}, NOW)
+        for i in range(1, 7):
+            self.engine.alerts[f'burgernet:{i}'].update(message=f'Message {i}', updated_at=f'2026-09-07T12:00:0{i}Z')
+        state = self.engine.area_state(self.engine.zones[0])
+        self.assertEqual(state['active_count'], 5)
+        self.assertEqual(len(state['alerts']), 5)
+        self.assertEqual([a['id'] for a in state['notification_alerts']], ['burgernet:5', 'burgernet:4', 'burgernet:3'])
+        self.assertIn('Message 5', state['notification_text'])
+        self.assertNotIn('Message 2', state['notification_text'])
+        self.assertNotIn('Message 6', state['notification_text'])
 
 
 class AppTests(unittest.IsolatedAsyncioTestCase):
@@ -151,13 +180,13 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
                 messages.append((topic,payload,kwargs))
         await self.service.bridge.publish(Client())
         old = set(self.engine.discovery_topics)
-        self.assertEqual(len(old), 4)
+        self.assertEqual(len(old), 6)
         self.assertTrue(all(m[2]['retain'] for m in messages))
         self.engine.replace_zones([])
         messages.clear()
         await self.service.bridge.publish(Client())
         removed = [m[0] for m in messages if m[1] == '']
-        self.assertEqual(len(removed), 2)
+        self.assertEqual(len(removed), 3)
         self.assertTrue(set(removed).issubset(old))
 
     async def test_mqtt_manual_connection_bypasses_failed_supervisor_and_hides_secrets(self):

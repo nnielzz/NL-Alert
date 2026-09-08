@@ -108,3 +108,46 @@ mqtt_tls: false
 Use an existing MQTT account accepted by your broker. `core-mosquitto` is the internal hostname of the official Mosquitto app. For another broker, use its reachable hostname and appropriate port/TLS settings. TLS validates the certificate; use a hostname matching it. Credentials stay in the app backend and are never included in dashboard state. Leave `mqtt_host` empty to use Supervisor automatically.
 
 On an existing installation, explicitly set `poll_seconds: 180`: Home Assistant preserves previously saved options when updating. MQTT availability is still refreshed at least every 30 seconds so sensors do not expire between feed refreshes.
+
+## Message sensor for notifications and TTS (4.0.3)
+
+Each area now also has a **melding** sensor, for example **Rondom mij melding**, under the NL Alert MQTT device. The combined **Alle gebieden melding** sensor covers the union of enabled areas and deduplicates overlaps.
+
+- State: latest active matching alert title, capped at 255 characters.
+- `title` / `message`: full title and description of that latest alert.
+- `notification_text`: titles and descriptions of at most the three newest active matching alerts, ready for a notification or TTS message.
+- `notification_alerts`: those same three alerts as structured objects, including category.
+- Newest means most recently updated by the source. Only alerts matching the area's configured radius and filters are considered (including national alerts if enabled).
+- `alerts` and `active_count` still include all active matching alerts.
+- When there are no active alerts, state is `Geen actieve meldingen`, text is empty and the notification list is empty. Unavailable sources/locations retain the existing availability rules.
+
+After updating/restarting the app, find the actual entity ID in **Settings → Devices & services → MQTT → NL Alert**. Replace the example ID below with your area's sensor ID. Use this in the message field of a notification or TTS action:
+
+```jinja
+{{ state_attr('sensor.nl_alert_rondom_mij_melding', 'notification_text') or '' }}
+```
+
+To trigger only when this text changes (including description changes with the same title), use the `notification_text` attribute rather than the sensor title. Example automation, using a built-in notification:
+
+```yaml
+alias: NL Alert - drie nieuwste meldingen
+triggers:
+  - trigger: state
+    entity_id: sensor.nl_alert_rondom_mij_melding
+    attribute: notification_text
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none
+         and trigger.to_state.state not in ['unknown', 'unavailable']
+         and (trigger.to_state.attributes.get('notification_text', '') | trim) != '' }}
+actions:
+  - action: persistent_notification.create
+    data:
+      title: NL Alert
+      message: "{{ trigger.to_state.attributes.get('notification_text', '') }}"
+mode: queued
+max: 10
+```
+
+This announces the latest overview when its text changes, potentially including an alert announced earlier. It can also trigger after startup. For one notification per new incident or update, use the `nl_alert_radius` events documented above instead.

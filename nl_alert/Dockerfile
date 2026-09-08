@@ -1,5 +1,5 @@
 FROM python:3.13-slim-bookworm
-ARG BUILD_VERSION=4.0.2
+ARG BUILD_VERSION=4.0.3
 ARG BUILD_ARCH
 LABEL io.hass.name="NL Alert" \
       io.hass.description="Dutch emergency alert dashboard and MQTT sensors" \

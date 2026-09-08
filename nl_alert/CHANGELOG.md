@@ -1,3 +1,10 @@
+# 4.0.3
+
+- MQTT message sensor per radius area and for all areas combined.
+- Sensor state shows the latest active alert title; attributes retain full title and message.
+- notification_text and notification_alerts contain at most the three most recently updated active matching alerts.
+- Existing counts and alerts attributes continue to include all active matching alerts.
+
 # 4.0.2
 
 - Optional direct MQTT configuration when Supervisor service discovery fails.
