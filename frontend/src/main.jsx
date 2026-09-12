@@ -10,7 +10,7 @@ import { demo } from './demo';
 import { subscribe, saveAreas } from './client';
 import { revealMarker } from './map-selection.js';
 
-const sources = {nl_alert: {name: 'NL-Alert', color: '#ea7553'}, burgernet: {name: 'Burgernet', color: '#548678'}, amber: {name: 'AMBER Alert', color: '#c59b43'}};
+const sources = {nl_alert: {name: 'NL-Alert', color: '#ea7553'}, burgernet: {name: 'Burgernet', color: '#579ee8'}, amber: {name: 'AMBER Alert', color: '#c59b43'}};
 const fmt = t => t ? new Date(t).toLocaleString('nl-NL', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}) : 'Tijd onbekend';
 const distance = (a,b) => {const r=Math.PI/180, dlat=(a.lat-b.lat)*r, dlon=(a.lon-b.lon)*r; return 12742*Math.asin(Math.sqrt(Math.sin(dlat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dlon/2)**2));};
 const point = a => Number.isFinite(a?.lat) && Number.isFinite(a?.lon);

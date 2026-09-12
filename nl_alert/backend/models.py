@@ -1,5 +1,6 @@
 """Pure source adapters and geographic helpers (no Home Assistant dependency)."""
 import math
+import re
 import logging
 from datetime import datetime, timezone
 _LOGGER = logging.getLogger(__name__)
@@ -273,6 +274,20 @@ def _prepare_burgernet_actions(payload, lat0, lon0, max_radius_m):
     return actions
 
 
+def burgernet_title(action):
+    """Prefer a specific source title, otherwise use an excerpt, not an inferred label."""
+    generic = {'burgernetoproep', 'burgernet oproep', 'burgernet', 'oproep'}
+    for message in reversed(action['messages']):
+        title = (message.get('title') or '').strip()
+        if title and title.lower() not in generic:
+            return title
+    for message in reversed(action['messages']):
+        body = re.sub(r'\s+', ' ', (message.get('body') or '').replace('**', '')).strip()
+        if body:
+            return body if len(body) <= 120 else body[:119].rsplit(' ', 1)[0] + '…'
+    return 'Melding in ' + (action['municipality'] or 'onbekende omgeving')
+
+
 def _normalize(source, payload, now=None):
     """Adapt verified feed shapes into source-scoped alert records."""
     now = now or datetime.now(timezone.utc)
@@ -283,7 +298,7 @@ def _normalize(source, payload, now=None):
         for action in _prepare_burgernet_actions(payload, 52, 5, None):
             messages = [{'type': m['message_type'], 'body': m['body'] or m['title'] or '', 'time': m['last_modified'], 'url': m['response_url']} for m in action['messages']]
             result.append(dict(id=f"burgernet:{action['id']}", source='amber' if action['amber_alert'] else source, feed=source,
-                title=next((m.get('title') for m in action['messages'] if m.get('title')), None) or ('Vermissing / oproep' if action['amber_alert'] else 'Burgernetoproep'),
+                title=burgernet_title(action),
                 place=action['municipality'] or 'Onbekende locatie', active=action['active'],
                 lat=action['area']['lat'], lon=action['area']['lng'], radius_m=action['area']['radius'], polygons=[],
                 messages=messages, updated_at=action['latest_message_time'] or action['start'], start_at=action['start'], national=False))

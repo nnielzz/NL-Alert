@@ -1,3 +1,12 @@
+# 4.0.5
+
+- Publish only per-area MQTT entities, with separate title, source and content sensors for each of the three newest active matching alerts.
+- Automatically remove old combined-area and single-message discovery entities; retain per-area active/count IDs.
+- Full content remains in attributes; sensor states are capped at 255 characters.
+- Exclude national-only alerts from radius sensor values.
+- Derive missing/generic Burgernet titles from actual message text.
+- Blue Burgernet markers, filters and detail accents.
+
 # 4.0.4
 
 - Preserve map markers across live data refreshes.

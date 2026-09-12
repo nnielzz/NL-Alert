@@ -14,27 +14,32 @@ _LOGGER = logging.getLogger(__name__)
 def discovery(engine):
     prefix = f'nl_alert/{engine.instance_id}'
     device = {'identifiers': [f'nl_alert_app_{engine.instance_id}'], 'name': 'NL Alert',
-        'manufacturer': 'nnielzz', 'model': 'NL Alert App', 'sw_version': '4.0.4'}
+        'manufacturer': 'nnielzz', 'model': 'NL Alert App', 'sw_version': '4.0.5'}
     result = {}
-    for zone in [None, *(engine.zones or [])]:
-        area = zone['id'] if zone else 'all'
-        name = zone['name'] if zone else 'Alle gebieden'
+    for zone in engine.zones or []:
+        area, name = zone['id'], zone['name']
         state_topic = f'{prefix}/areas/{area}/state'
-        for kind, component, label in (('binary_sensor', 'binary_sensor', 'actief'),
-                ('sensor', 'sensor', 'aantal'), ('message', 'sensor', 'melding')):
-            uid = f'nl_alert_{engine.instance_id}_{area}_{kind}'
-            config = {'name': f'{name} {label}',
-                'unique_id': uid, 'device': device, 'state_topic': state_topic,
-                'json_attributes_topic': state_topic, 'availability_mode': 'all',
-                'availability': [{'topic': f'{prefix}/availability'}, {'topic': f'{prefix}/areas/{area}/availability'}],
-                'expire_after': 180, 'icon': 'mdi:radar'}
+        common = {'device': device, 'state_topic': state_topic,
+            'json_attributes_topic': state_topic, 'availability_mode': 'all',
+            'availability': [{'topic': f'{prefix}/availability'}, {'topic': f'{prefix}/areas/{area}/availability'}],
+            'expire_after': 180, 'icon': 'mdi:radar'}
+        for component in ('binary_sensor', 'sensor'):
+            uid = f'nl_alert_{engine.instance_id}_{area}_{component}'
+            config = {**common, 'unique_id': uid,
+                'name': f'{name} ' + ('actief' if component == 'binary_sensor' else 'aantal')}
             if component == 'binary_sensor':
                 config.update(device_class='safety', value_template="{{ 'ON' if value_json.active else 'OFF' }}")
-            elif kind == 'sensor':
-                config.update(value_template='{{ value_json.active_count }}', unit_of_measurement='meldingen')
             else:
-                config.update(value_template='{{ value_json.title[:255] }}', icon='mdi:message-alert-outline')
+                config.update(value_template='{{ value_json.active_count }}', unit_of_measurement='meldingen')
             result[f'homeassistant/{component}/{uid}/config'] = config
+        for index in range(3):
+            for field, label in (('title', 'titel'), ('source', 'soort'), ('message', 'inhoud')):
+                uid = f'nl_alert_{engine.instance_id}_{area}_{index+1}_{field}'
+                config = {**common, 'unique_id': uid, 'name': f'{name} melding {index+1} {label}',
+                    'icon': 'mdi:message-alert-outline',
+                    'value_template': '{{ value_json.slots[' + str(index) + '].' + field + '[:255] }}',
+                    'json_attributes_template': '{{ value_json.slots[' + str(index) + '] | tojson }}'}
+                result[f'homeassistant/sensor/{uid}/config'] = config
     return result
 
 
@@ -79,7 +84,7 @@ class Bridge:
             # Save attempted discovery before sending so a later deletion can clean up.
             self.engine.discovery_topics.update(config)
             await self.persist()
-            states = [(z['id'] if z else 'all', self.engine.area_state(z)) for z in [None, *(self.engine.zones or [])]]
+            states = [(z['id'], self.engine.area_state(z)) for z in self.engine.zones or []]
         for topic in removed:
             await client.publish(topic, '', qos=1, retain=True)
         for topic, payload in config.items():

@@ -28,16 +28,25 @@ default_radius_km: 5
 
 Restart the app after changing its configuration. Area edits in the dashboard apply immediately. Areas, alert history, discovery identifiers and pending events are stored in `/data/state.json` and survive app restarts/updates/backups. Deleting the app's data resets its identity and settings.
 
-## Sensors and simultaneous alerts
+## Sensors per radius area (4.0.5)
 
-MQTT Discovery creates a **binary sensor** and a **count sensor** for each area, plus a combined pair for all areas. Find their entity IDs under **Settings → Devices & services → MQTT → NL Alert**.
+Only area-specific MQTT entities are published. The combined “Alle gebieden” sensors and the previous single “melding” sensor are removed automatically through MQTT Discovery. Existing per-area active/count entities retain their identifiers.
 
-- Binary sensor: `on` while any current alert intersects the area.
-- Count sensor: number of current alerts. The combined count deduplicates the same alert across overlapping areas.
-- Attributes: `alerts`, `active_count`, `categories`, `zone_id`, `available`.
-- Each item in `alerts` has `id`, `source`, `category`, `title`, `message`, `messages`, `place`, `updated_at`, and `active`.
-- `category` is `burgernet`, `amber` or `nl_alert`. `message` is the latest text; `messages` contains the available conversation. The list supports every simultaneous matching alert.
-- MQTT disconnect/app stop or an unavailable required feed marks entities unavailable. Unknown data must not be treated as “no danger”. Fixed areas do not depend on a tracker. Deleting an area removes its discovered sensor entities.
+Each area has **actief**, **aantal**, and three numbered sets of **titel**, **soort**, **inhoud** (11 entities per area). Slot 1 is the most recently updated active matching alert, followed by slots 2 and 3. Each set refers to the same incident; slots can shift when messages update or end. Separate areas have independent sets, including overlapping areas.
+
+Only alerts whose supplied point/radius or polygon intersects your configured radius appear. National alerts without a regional match are excluded from MQTT sensors, even if national alerts are enabled for the area's event automations. Disabled areas show no active messages. Missing required source/location data makes sensors unavailable.
+
+The `soort` state is `amber`, `nl_alert`, or `burgernet`; an empty slot uses `geen`. Empty title slots show `Geen actieve melding`, and content is empty. All three sensors in each slot carry `id`, `source`, `category`, `title`, `message`, `messages`, `place`, `updated_at` and `active` attributes. Title/content sensor states are capped at 255 characters; attributes retain full text.
+
+For notification/TTS text, use the content sensor's **message attribute**, not its shortened state. Replace this example entity ID with the actual ID under **Settings → Devices & services → MQTT → NL Alert**:
+
+```jinja
+{{ state_attr('sensor.nl_alert_rondom_mij_melding_1_inhoud', 'message') or '' }}
+```
+
+For a trigger on text changes, select the `message` attribute of the desired content sensor. Check availability and nonempty text before notifying. If responding to a single change, read `trigger.to_state.attributes` so the action uses the triggering message even if slots shift later. For per-incident enter/update/closed notifications use the events below.
+
+The active/count sensors retain all matching alerts in `alerts`, plus at most three in `notification_alerts` and combined text in `notification_text`. Counts include every matching active alert. No new MQTT entity is created for individual incidents.
 
 ## Automations
 
@@ -109,45 +118,3 @@ Use an existing MQTT account accepted by your broker. `core-mosquitto` is the in
 
 On an existing installation, explicitly set `poll_seconds: 180`: Home Assistant preserves previously saved options when updating. MQTT availability is still refreshed at least every 30 seconds so sensors do not expire between feed refreshes.
 
-## Message sensor for notifications and TTS (4.0.3)
-
-Each area now also has a **melding** sensor, for example **Rondom mij melding**, under the NL Alert MQTT device. The combined **Alle gebieden melding** sensor covers the union of enabled areas and deduplicates overlaps.
-
-- State: latest active matching alert title, capped at 255 characters.
-- `title` / `message`: full title and description of that latest alert.
-- `notification_text`: titles and descriptions of at most the three newest active matching alerts, ready for a notification or TTS message.
-- `notification_alerts`: those same three alerts as structured objects, including category.
-- Newest means most recently updated by the source. Only alerts matching the area's configured radius and filters are considered (including national alerts if enabled).
-- `alerts` and `active_count` still include all active matching alerts.
-- When there are no active alerts, state is `Geen actieve meldingen`, text is empty and the notification list is empty. Unavailable sources/locations retain the existing availability rules.
-
-After updating/restarting the app, find the actual entity ID in **Settings → Devices & services → MQTT → NL Alert**. Replace the example ID below with your area's sensor ID. Use this in the message field of a notification or TTS action:
-
-```jinja
-{{ state_attr('sensor.nl_alert_rondom_mij_melding', 'notification_text') or '' }}
-```
-
-To trigger only when this text changes (including description changes with the same title), use the `notification_text` attribute rather than the sensor title. Example automation, using a built-in notification:
-
-```yaml
-alias: NL Alert - drie nieuwste meldingen
-triggers:
-  - trigger: state
-    entity_id: sensor.nl_alert_rondom_mij_melding
-    attribute: notification_text
-conditions:
-  - condition: template
-    value_template: >-
-      {{ trigger.to_state is not none
-         and trigger.to_state.state not in ['unknown', 'unavailable']
-         and (trigger.to_state.attributes.get('notification_text', '') | trim) != '' }}
-actions:
-  - action: persistent_notification.create
-    data:
-      title: NL Alert
-      message: "{{ trigger.to_state.attributes.get('notification_text', '') }}"
-mode: queued
-max: 10
-```
-
-This announces the latest overview when its text changes, potentially including an alert announced earlier. It can also trigger after startup. For one notification per new incident or update, use the `nl_alert_radius` events documented above instead.

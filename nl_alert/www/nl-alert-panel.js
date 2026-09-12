@@ -18317,7 +18317,7 @@ function Fp(H, $, E) {
     w = $.getVisibleParent(E), w && w !== E && w.spiderfy();
   }
 }
-const Zi = { nl_alert: { name: "NL-Alert", color: "#ea7553" }, burgernet: { name: "Burgernet", color: "#548678" }, amber: { name: "AMBER Alert", color: "#c59b43" } }, Rc = (H) => H ? new Date(H).toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Tijd onbekend", $p = (H, $) => {
+const Zi = { nl_alert: { name: "NL-Alert", color: "#ea7553" }, burgernet: { name: "Burgernet", color: "#579ee8" }, amber: { name: "AMBER Alert", color: "#c59b43" } }, Rc = (H) => H ? new Date(H).toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Tijd onbekend", $p = (H, $) => {
   const E = Math.PI / 180, w = (H.lat - $.lat) * E, at = (H.lon - $.lon) * E;
   return 12742 * Math.asin(Math.sqrt(Math.sin(w / 2) ** 2 + Math.cos(H.lat * E) * Math.cos($.lat * E) * Math.sin(at / 2) ** 2));
 }, Ri = (H) => Number.isFinite(H == null ? void 0 : H.lat) && Number.isFinite(H == null ? void 0 : H.lon), Kd = (H) => {

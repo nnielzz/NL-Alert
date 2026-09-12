@@ -108,12 +108,15 @@ class Engine:
             feeds.add('burgernet')
         available = all(self.sources[s]['ok'] for s in feeds) and all(not z['follow_location'] or self.location.get('ok') for z in enabled)
         alerts = [a for a in self.alerts.values() if a['active'] and not a['stale'] and any(
-            (not z['follow_location'] or self.location.get('ok')) and matches(z, a, self.location) for z in enabled)]
+            (not z['follow_location'] or self.location.get('ok')) and matches({**z, 'include_national': False}, a, self.location) for z in enabled)]
         fields = ('id', 'source', 'category', 'title', 'message', 'messages', 'place', 'updated_at', 'active')
         alerts.sort(key=lambda a: (a.get('updated_at') or '', a['id']), reverse=True)
+        slots = [{k: a.get(k) for k in fields} for a in alerts[:3]]
+        while len(slots) < 3:
+            slots.append({'id': None, 'title': 'Geen actieve melding', 'source': 'geen', 'category': 'geen', 'message': '', 'messages': [], 'place': '', 'updated_at': None, 'active': False})
         latest = alerts[0] if alerts else {}
         notification_text = '\n\n'.join('\n'.join(filter(None, [a.get('title'), a.get('message')])) for a in alerts[:3])
-        return {'active': bool(alerts), 'active_count': len(alerts), 'available': available,
+        return {'slots': slots, 'active': bool(alerts), 'active_count': len(alerts), 'available': available,
             'title': latest.get('title') or ('Actieve melding' if alerts else 'Geen actieve meldingen'),
             'message': latest.get('message') or '', 'notification_text': notification_text,
             'notification_alerts': [{k: a.get(k) for k in fields} for a in alerts[:3]],

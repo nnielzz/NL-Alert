@@ -79,7 +79,7 @@ class EngineTests(unittest.TestCase):
 
     def test_discovery_has_stable_ids_and_dual_availability(self):
         configs = discovery(self.engine)
-        self.assertEqual(len(configs), 6)
+        self.assertEqual(len(configs), 11)
         for topic, config in configs.items():
             self.assertIn('unique_id', config)
             self.assertEqual(len(config['availability']), 2)
@@ -92,6 +92,23 @@ class EngineTests(unittest.TestCase):
         self.engine.replace_zones([])
         self.assertEqual(self.engine.outbox, [])
 
+    def test_radius_slots_are_separate_and_exclude_national_alerts(self):
+        self.engine.replace_zones([ZONE, {**ZONE, 'id': 'far', 'follow_location': False, 'lat': 54}])
+        self.engine.ingest({'burgernet': {'actions': [action(1), action(2, lat=54)]}}, NOW)
+        self.engine.alerts['national'] = {**self.engine.alerts['burgernet:1'], 'id':'national', 'national':True}
+        home = self.engine.area_state(self.engine.zones[0])
+        far = self.engine.area_state(self.engine.zones[1])
+        self.assertEqual(home['slots'][0]['id'], 'burgernet:1')
+        self.assertEqual(far['slots'][0]['id'], 'burgernet:2')
+        self.assertEqual(home['slots'][1]['source'], 'geen')
+        self.assertEqual(home['slots'][1]['message'], '')
+        self.assertEqual(len(discovery(self.engine)), 22)
+        self.assertFalse(any('_all_' in t for t in discovery(self.engine)))
+
+    def test_burgernet_generic_title_uses_actual_content(self):
+        self.engine.ingest({'burgernet': {'actions': [action(messages=[{'title':'Burgernet oproep', 'body':'Vermiste man in Utrecht, draagt een blauwe jas.', 'lastModifiedTimestamp':1788778800}])]}}, NOW)
+        self.assertEqual(self.engine.alerts['burgernet:1']['title'], 'Vermiste man in Utrecht, draagt een blauwe jas.')
+
     def test_message_sensor_preserves_full_text_and_multiple_alerts(self):
         self.engine.ingest({'burgernet': {'actions': [action(1), action(2)]}}, NOW)
         self.engine.alerts['burgernet:1'].update(title='Older', message='First message', updated_at='2026-09-07T10:00:00Z')
@@ -102,8 +119,8 @@ class EngineTests(unittest.TestCase):
         self.assertIn('First message', state['notification_text'])
         self.assertIn('M' * 500, state['notification_text'])
         self.assertEqual(len(state['alerts']), 2)
-        config = next(c for t, c in discovery(self.engine).items() if t.endswith('_all_message/config'))
-        self.assertEqual(config['value_template'], '{{ value_json.title[:255] }}')
+        config = next(c for t, c in discovery(self.engine).items() if t.endswith('_home_1_title/config'))
+        self.assertEqual(config['value_template'], '{{ value_json.slots[0].title[:255] }}')
         self.assertNotIn('unit_of_measurement', config)
         self.engine.replace_zones([])
         self.assertEqual(self.engine.area_state()['notification_text'], '')
@@ -180,14 +197,25 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
                 messages.append((topic,payload,kwargs))
         await self.service.bridge.publish(Client())
         old = set(self.engine.discovery_topics)
-        self.assertEqual(len(old), 6)
+        self.assertEqual(len(old), 11)
         self.assertTrue(all(m[2]['retain'] for m in messages))
         self.engine.replace_zones([])
         messages.clear()
         await self.service.bridge.publish(Client())
         removed = [m[0] for m in messages if m[1] == '']
-        self.assertEqual(len(removed), 3)
+        self.assertEqual(len(removed), 11)
         self.assertTrue(set(removed).issubset(old))
+
+    async def test_migration_removes_old_combined_and_message_discovery(self):
+        old = {f'homeassistant/sensor/nl_alert_{self.engine.instance_id}_all_sensor/config',
+            f'homeassistant/sensor/nl_alert_{self.engine.instance_id}_home_message/config'}
+        self.engine.discovery_topics.update(old)
+        messages = []
+        class Client:
+            async def publish(self, topic, payload, **kwargs):
+                messages.append((topic, payload))
+        await self.service.bridge.publish(Client())
+        self.assertTrue(old.issubset({t for t,p in messages if p == ''}))
 
     async def test_mqtt_manual_connection_bypasses_failed_supervisor_and_hides_secrets(self):
         self.service.supervisor.mqtt = AsyncMock(side_effect=ConnectionError())
