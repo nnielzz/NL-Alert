@@ -63,7 +63,8 @@ class EngineTests(unittest.TestCase):
     def test_source_failure_is_unavailable_and_keeps_history(self):
         self.engine.ingest({'burgernet': {'actions': [action(1)]}}, NOW)
         self.engine.ingest({'burgernet': ConnectionError('offline')}, NOW)
-        self.assertFalse(self.engine.area_state()['available'])
+        self.assertTrue(self.engine.area_state()['available'])
+        self.assertFalse(self.engine.area_state()['data_complete'])
         self.assertTrue(self.engine.alerts['burgernet:1']['stale'])
         self.assertNotIn('closed', [e['kind'] for e in self.engine.outbox])
 
@@ -73,13 +74,21 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(self.engine.area_state(self.engine.zones[0])['available'])
         self.assertTrue(self.engine.area_state(self.engine.zones[1])['available'])
 
+    def test_failed_source_does_not_hide_healthy_source_message(self):
+        self.engine.ingest({'burgernet': {'actions':[action(1)]}, 'nl_alert': ConnectionError()}, NOW)
+        state = self.engine.area_state(self.engine.zones[0])
+        self.assertTrue(state['available'])
+        self.assertEqual(state['slots'][0]['id'], 'burgernet:1')
+        self.assertFalse(state['slots'][0]['data_complete'])
+        self.assertEqual(state['unavailable_sources'], ['nl_alert'])
+
     def test_nan_duplicate_reserved_ids_and_empty_sources_rejected(self):
         for zones in ([{**ZONE,'lat':float('nan')}], [ZONE,ZONE], [{**ZONE,'id':'all'}], [{**ZONE,'sources':[]}]):
             with self.assertRaises(ValueError): validate_zones(zones)
 
     def test_discovery_has_stable_ids_and_dual_availability(self):
         configs = discovery(self.engine)
-        self.assertEqual(len(configs), 11)
+        self.assertEqual(len(configs), 5)
         for topic, config in configs.items():
             self.assertIn('unique_id', config)
             self.assertEqual(len(config['availability']), 2)
@@ -102,7 +111,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(far['slots'][0]['id'], 'burgernet:2')
         self.assertEqual(home['slots'][1]['source'], 'geen')
         self.assertEqual(home['slots'][1]['message'], '')
-        self.assertEqual(len(discovery(self.engine)), 22)
+        self.assertEqual(len(discovery(self.engine)), 10)
         self.assertFalse(any('_all_' in t for t in discovery(self.engine)))
 
     def test_burgernet_generic_title_uses_actual_content(self):
@@ -197,13 +206,13 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
                 messages.append((topic,payload,kwargs))
         await self.service.bridge.publish(Client())
         old = set(self.engine.discovery_topics)
-        self.assertEqual(len(old), 11)
+        self.assertEqual(len(old), 5)
         self.assertTrue(all(m[2]['retain'] for m in messages))
         self.engine.replace_zones([])
         messages.clear()
         await self.service.bridge.publish(Client())
         removed = [m[0] for m in messages if m[1] == '']
-        self.assertEqual(len(removed), 11)
+        self.assertEqual(len(removed), 5)
         self.assertTrue(set(removed).issubset(old))
 
     async def test_migration_removes_old_combined_and_message_discovery(self):
@@ -216,6 +225,31 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
                 messages.append((topic, payload))
         await self.service.bridge.publish(Client())
         self.assertTrue(old.issubset({t for t,p in messages if p == ''}))
+
+    async def test_source_outage_publishes_online_with_incomplete_attributes(self):
+        self.engine.ingest({'burgernet': {'actions':[action(1)]}, 'nl_alert': ConnectionError()}, NOW)
+        messages = {}
+        class Client:
+            async def publish(self, topic, payload, **kwargs):
+                messages[topic] = payload
+        await self.service.bridge.publish(Client())
+        prefix = f'nl_alert/{self.engine.instance_id}/areas/home'
+        self.assertEqual(messages[prefix + '/availability'], 'online')
+        state = json.loads(messages[prefix + '/state'])
+        self.assertEqual(state['slots'][0]['source'], 'burgernet')
+        self.assertFalse(state['slots'][0]['data_complete'])
+
+    async def test_extra_slot_entities_are_removed_on_update(self):
+        old = {f'homeassistant/sensor/nl_alert_{self.engine.instance_id}_home_{i}_{field}/config'
+            for i in (2,3) for field in ('title','source','message')}
+        self.engine.discovery_topics.update(old)
+        removed = set()
+        class Client:
+            async def publish(self, topic, payload, **kwargs):
+                if payload == '': removed.add(topic)
+        await self.service.bridge.publish(Client())
+        self.assertEqual(removed, old)
+        self.assertEqual(len(self.engine.discovery_topics), 5)
 
     async def test_mqtt_manual_connection_bypasses_failed_supervisor_and_hides_secrets(self):
         self.service.supervisor.mqtt = AsyncMock(side_effect=ConnectionError())

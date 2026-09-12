@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 def discovery(engine):
     prefix = f'nl_alert/{engine.instance_id}'
     device = {'identifiers': [f'nl_alert_app_{engine.instance_id}'], 'name': 'NL Alert',
-        'manufacturer': 'nnielzz', 'model': 'NL Alert App', 'sw_version': '4.0.5'}
+        'manufacturer': 'nnielzz', 'model': 'NL Alert App', 'sw_version': '4.0.6'}
     result = {}
     for zone in engine.zones or []:
         area, name = zone['id'], zone['name']
@@ -32,10 +32,10 @@ def discovery(engine):
             else:
                 config.update(value_template='{{ value_json.active_count }}', unit_of_measurement='meldingen')
             result[f'homeassistant/{component}/{uid}/config'] = config
-        for index in range(3):
+        for index in range(1):
             for field, label in (('title', 'titel'), ('source', 'soort'), ('message', 'inhoud')):
                 uid = f'nl_alert_{engine.instance_id}_{area}_{index+1}_{field}'
-                config = {**common, 'unique_id': uid, 'name': f'{name} melding {index+1} {label}',
+                config = {**common, 'unique_id': uid, 'name': f'{name} {label}',
                     'icon': 'mdi:message-alert-outline',
                     'value_template': '{{ value_json.slots[' + str(index) + '].' + field + '[:255] }}',
                     'json_attributes_template': '{{ value_json.slots[' + str(index) + '] | tojson }}'}

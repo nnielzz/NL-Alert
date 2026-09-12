@@ -1,3 +1,10 @@
+# 4.0.6
+
+- Five MQTT entities per area, with only the most recent alert's title, source and content.
+- Source outages no longer propagate to MQTT availability; completeness and failed sources are exposed as attributes.
+- Optional notification blueprint with explicit AI consent and original-text fallback.
+- Documentation focused on installation and current functionality.
+
 # 4.0.5
 
 - Publish only per-area MQTT entities, with separate title, source and content sensors for each of the three newest active matching alerts.
@@ -43,4 +50,3 @@
 - Persistent radius areas with MQTT Discovery count and safety sensors.
 - Multiple simultaneous alerts and durable `nl_alert_radius` automation events.
 - Home Assistant home/person/device_tracker location through the Supervisor proxy.
-- No custom integration or HACS installation required.

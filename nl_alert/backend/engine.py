@@ -106,7 +106,8 @@ class Engine:
         feeds = set(s for z in enabled for s in z['sources'])
         if 'amber' in feeds:
             feeds.add('burgernet')
-        available = all(self.sources[s]['ok'] for s in feeds) and all(not z['follow_location'] or self.location.get('ok') for z in enabled)
+        unavailable_sources = sorted(s for s in feeds if not self.sources[s]['ok'])
+        available = all(not z['follow_location'] or self.location.get('ok') for z in enabled)
         alerts = [a for a in self.alerts.values() if a['active'] and not a['stale'] and any(
             (not z['follow_location'] or self.location.get('ok')) and matches({**z, 'include_national': False}, a, self.location) for z in enabled)]
         fields = ('id', 'source', 'category', 'title', 'message', 'messages', 'place', 'updated_at', 'active')
@@ -116,7 +117,10 @@ class Engine:
             slots.append({'id': None, 'title': 'Geen actieve melding', 'source': 'geen', 'category': 'geen', 'message': '', 'messages': [], 'place': '', 'updated_at': None, 'active': False})
         latest = alerts[0] if alerts else {}
         notification_text = '\n\n'.join('\n'.join(filter(None, [a.get('title'), a.get('message')])) for a in alerts[:3])
-        return {'slots': slots, 'active': bool(alerts), 'active_count': len(alerts), 'available': available,
+        slots[0].update(data_complete=not unavailable_sources and available, unavailable_sources=unavailable_sources)
+        if not alerts and unavailable_sources:
+            slots[0]['title'] = 'Geen actuele meldingsgegevens'
+        return {'data_complete': not unavailable_sources and available, 'unavailable_sources': unavailable_sources, 'slots': slots, 'active': bool(alerts), 'active_count': len(alerts), 'available': available,
             'title': latest.get('title') or ('Actieve melding' if alerts else 'Geen actieve meldingen'),
             'message': latest.get('message') or '', 'notification_text': notification_text,
             'notification_alerts': [{k: a.get(k) for k in fields} for a in alerts[:3]],
